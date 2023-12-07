@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using P2PDirectoryService.Data;
+using System.Net.Sockets;
 using System.Xml.Linq;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,7 +19,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
 
 
 app.MapPost("/CreateNetwork", ([FromBody] NodeDTO node) =>
@@ -95,7 +95,18 @@ app.MapPost("/DeleteNetwork/{networkId}", (Guid networkId) =>
     return Results.Ok();
 });
 
+app.MapPost("AddItem/{networkId}", async (Guid networkId, [FromBody] SendableItem item) =>
+{
+    using var client = new UdpClient();
+    var network = DataStore.Networks.First(network => network.Id == networkId);
+    var dataItemBytes = ByteExtensions.GetByteArray(item);
 
+    var tasks = new List<Task>();
+    network.Nodes.ForEach(x => tasks.Add(client.SendAsync(dataItemBytes, dataItemBytes.Length, x.IP, x.Port)));
+    await Task.WhenAll(tasks);
+
+    return Results.Ok();
+});
 
 app.Run();
 
@@ -118,4 +129,13 @@ public record NodeDTO
     public int Port { get; init; }
     public string NodeName { get; init; }
     public Guid NetworkId { get; init; }
+}
+
+internal class SendableItem
+{
+    public Guid Id { get; set; }
+    public Guid? SenderId = Guid.Empty;
+    public DateTime? Timestamp { get; set; }
+    public object? Item { get; set; }
+    public bool ExternalItem = true;
 }
